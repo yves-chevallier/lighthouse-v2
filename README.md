@@ -1,10 +1,13 @@
 # Lighthouse v2 DIY tracker
 
-A bunch of gathered information about the HTC Vive tracking system used with the Base Stations v2 (one rotor).
+Random gathered information about the HTC Vive tracking system to be used with the Base Stations version 2 (one rotor).
 
 ## Definitions
 
-- **Base station** or **lighthouse**: a HTC Vive base station v2
+- **LH2** or **lighthouse**: an HTC Vive base station v2
+- **OOTX** Omnidirectional Optical Transmitter
+- **LFSR** [Linear-feedback shift register](https://en.wikipedia.org/wiki/Linear-feedback_shift_register)
+- **BMC** [Biphase Mark Code](https://en.wikipedia.org/wiki/Differential_Manchester_encoding), quite similar to Manchester encoding
 
 ## Base stations parameters
 
@@ -16,19 +19,34 @@ A bunch of gathered information about the HTC Vive tracking system used with the
 - Sweep
   - Frequency: ~50 Hz
 
+## Project
+
+The goal of this project is to create a DIY application with the HTC LH2 v2. The position of an embedded system should be visualized on a Web Browser.
+
+![project](assets/project.svg)
+
 ## Sensors
 
 Each sensor captures:
 
-- Arrival timestamp `time`
-- Cipher `cipher`, the first 17 bits of encoded data in the beam carrier
+- The arrival beam timestamp `time` (against internal timer)
+- The first 17 bits of encoded data in the beam carrier: `cipher`
 - LFSR polynomial used to generate the beam data
-- Time offset `offset`, from basestation sync event and the received pulse
-- Sensor ID (each sensor has its own ID)
-- Width of the received pulse `width`
+- Time offset `offset`, from the LH2 Sync Event and the received pulse
+- Sensor ID (each DIY sensor should have its own ID)
+- Width of the received pulse in seconds `width`
 
-Width can be used to approximate the distance from the basestation.
+Width could be used to approximate the distance from the basestation.
 
+During each sweep, each sensor is able to read anywhere from 17..50 bits of the encoded signal while the laser is passing by.
+
+## Protocol
+
+Each LH2 emits two infrared sweeps : one at 45° from the ground carrying the azimuth information, another at -45° carrying the elevation.
+
+These angles can be retreived by decoding the infrared beam captured by each sensor.
+
+Each captured beam frame looks as follow :
 
 ```
    <---> 166 ns (6 MHz)
@@ -38,7 +56,7 @@ Width can be used to approximate the distance from the basestation.
 ---+   +-+ +---+ +-+ +-+   +--- ...
     1 1 0 1 0 0 1 0 1 0 1 1 0 0            BMC data
     --- --- --- --- --- --- ---
-     0   1   0   1   1   0   0             Cipher
+     0   1   0   1   1   0   0             Cipher (> 17 bits)
 ---+                                  +---
    |                                  |    Envelope
    +--------------------------- ... --+
@@ -48,23 +66,49 @@ Width can be used to approximate the distance from the basestation.
    ^ Arrival Time
 ```
 
-## Polynomials
+The cipher is generated using a 17 bit LFSR initialized with the value `0x01` and configured with a polynomial. Each LH2 uses different sets of polynomials.
 
-32 polynomials appear to be used on a v2 lighthouse.
+Initially the tracker does not know which polynomials are in use. It has to decode them by brute forcing all possibilities ~ 131'071 different combination. This is possible using two frames captured by two different sensors with a small difference.
 
-Channel of the base station is `(nPoly / 2 + 1)`
-Each base station uses 2 polynomials to encode one bit of **slow data**
+### Polynomials
 
-Slow bit is `nPoly & 0x01`
+All the available polynomials have their maximal period size : 131'071 different values. Each value gives an information about the time offset since the beam sync time. The beam speed is about 50 pi rad/sec. 131'071 / 6e6 = 21.84 ms.
 
+32 polynomials appear to be used on a v2 lighthouse. The first two are:
 
-# Signal
+```
+x^17 + x^13 + x^12 + x^10 + x^7 + x^4 + x^2 + x^1 + 1
+x^17 + x^14 +  x^7 +  x^6 + x^5 + x^4 + x^3 + x^2 + 1
+```
 
-Signal is at 6MHz once demodulated. An entire period takes 21.85 ms (`(2**17-1) / 6e6`).
+They can be expressed in their hexadecimal form:
+
+```
+0x0001D258, 0x00017E04
+0x0001FF6B, 0x00013F67
+0x0001B9EE, 0x000198D1
+0x000178C7, 0x00018A55
+0x00015777, 0x0001D911
+0x00015769, 0x0001991F
+0x00012BD0, 0x0001CF73
+0x0001365D, 0x000197F5
+0x000194A0, 0x0001B279
+0x00013A34, 0x0001AE41
+0x000180D4, 0x00017891
+0x00012E64, 0x00017C72
+0x00019C6D, 0x00013F32
+0x0001AE14, 0x00014E76
+0x00013C97, 0x000130CB
+0x00013750, 0x0001CB8D
+```
+
+The initial value for the LFSR is `0x01`.
+
+Finding the set of polynomials used for each LH2 station allows to decode the base station channel with the relation `(nPoly / 2 + 1)`.
 
 # OOTX
 
-OOTX stands for Omnidirectional Optical Transmitter. Each base station has its own set of eccentricities or non-ideal behavior. At the factory, these non-ideal parameters are calculated and stored in the base station. In the field, each base station transmits its calibration parameters.
+Each base station has its own set of eccentricities or non-ideal behavior. At the factory, these non-ideal parameters are calculated and stored in the base station. In the field, each base station transmits its calibration parameters.
 
 Within v1, the OOTX data were sent through the sync pulses. In v2, they are encoded in the beam at one bit per sweep.
 
@@ -97,8 +141,7 @@ A possible architecture overview
 
 ![architecture](assets/diagram.svg)
 
-
-## References and Resources
+## Useful resources and references
 
 - [ESPTracker issue #1](https://github.com/cnlohr/esptracker/issues/1)
 - [Lighthouse v2 pictures](https://drive.google.com/drive/folders/1cRZ3P2-qimd7ccLXDEDPEvQxj6XS1rv1)

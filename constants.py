@@ -1,3 +1,4 @@
+# First one is x^17 + x^13 + x^12 + x^10 + x^7 + x^4 + x^2 + x^1 + 1
 polys = [
     0x0001D258, 0x00017E04,
     0x0001FF6B, 0x00013F67,
@@ -17,6 +18,7 @@ polys = [
     0x00013750, 0x0001CB8D
 ]
 
+# Expressed using a 48 MHz clock
 periods = [959000, 957000,
            953000, 949000,
            947000, 943000,
